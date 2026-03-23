@@ -1,0 +1,107 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: download-script
+data:
+  download.sh: |
+    #!/bin/bash
+    set -e
+
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y wget ca-certificates
+    rm -rf /var/lib/apt/lists/*
+
+    mkdir -p /site
+    rm -rf /site/*
+    cd /site
+
+    wget -E -k -p https://www.csd.uoc.gr/
+
+    if [ -d /site/www.csd.uoc.gr ]; then
+      cp -r /site/www.csd.uoc.gr/* /site/
+    fi
+
+    chmod -R 755 /site
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: csd-refresh
+spec:
+  schedule: "15 2 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: downloader
+              image: ubuntu:24.04
+              command: ["/bin/bash", "/scripts/download.sh"]
+              volumeMounts:
+                - name: script-volume
+                  mountPath: /scripts
+                - name: site-volume
+                  mountPath: /site
+          volumes:
+            - name: script-volume
+              configMap:
+                name: download-script
+                defaultMode: 0755
+            - name: site-volume
+              hostPath:
+                path: /data/csd-site
+                type: DirectoryOrCreate
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-site
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-site
+  template:
+    metadata:
+      labels:
+        app: nginx-site
+    spec:
+      initContainers:
+        - name: initial-download
+          image: ubuntu:24.04
+          command: ["/bin/bash", "/scripts/download.sh"]
+          volumeMounts:
+            - name: script-volume
+              mountPath: /scripts
+            - name: site-volume
+              mountPath: /site
+      containers:
+        - name: nginx
+          image: nginx:1.29.5-alpine
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: site-volume
+              mountPath: /usr/share/nginx/html
+      volumes:
+        - name: script-volume
+          configMap:
+            name: download-script
+            defaultMode: 0755
+        - name: site-volume
+          hostPath:
+            path: /data/csd-site
+            type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-site-svc
+spec:
+  selector:
+    app: nginx-site
+  ports:
+    - port: 80
+      targetPort: 80

@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: csd-deployment
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: csd
+  template:
+    metadata:
+      labels:
+        app: csd
+    spec:
+      containers:
+      - name: nginx
+        image: davidmr4/nginx-site-downloader:1.0
+        ports:
+        - containerPort: 80
+        env:
+        - name: SITE_URL
+          value: "https://www.csd.uoc.gr/"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: csd-service
+spec:
+  type: NodePort
+  selector:
+    app: csd
+  ports:
+    - port: 80
+      targetPort: 80
+      nodePort: 30007
