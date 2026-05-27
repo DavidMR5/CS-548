@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: webhook-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webhook-controller
+  namespace: webhook-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webhook
+  template:
+    metadata:
+      labels:
+        app: webhook
+    spec:
+      containers:
+        - name: webhook
+          image: davidmr4/webhook-controller:latest
+          ports:
+            - containerPort: 8000
+          volumeMounts:
+            - name: tls
+              mountPath: /certs
+              readOnly: true
+      volumes:
+        - name: tls
+          secret:
+            secretName: webhook-tls
+---
+aapiVersion: v1
+kind: Service
+metadata:
+  name: webhook-service
+  namespace: webhook-system
+spec:
+  selector:
+    app: webhook
+  ports:
+    - port: 443
+      targetPort: 8000
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: example-webhook
+webhooks:
+  - name: webhook.hy548.csd.uoc.gr
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    timeoutSeconds: 5
+    clientConfig:
+      service:
+        name: webhook-service
+        namespace: webhook-system
+        path: /mutate
+      caBundle: ""
+    rules:
+      - operations: ["CREATE"]
+        apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
